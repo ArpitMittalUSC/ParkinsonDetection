@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 from functools import reduce
 from sklearn import tree
 from sklearn import metrics
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split,cross_val_score
 import torch
 from sklearn.svm import SVC,LinearSVC
 from sklearn.linear_model import LogisticRegression
@@ -21,7 +21,12 @@ from torch.utils.data import TensorDataset
 from tensorflow.keras.utils import to_categorical
 import numpy as np
 import seaborn
+import xgboost
+from xgboost import cv
+import seaborn as sn
+
 import warnings
+
 warnings.filterwarnings("ignore")
 
 print("----(Data Preprocessing...)----")
@@ -115,9 +120,27 @@ semanticDataSet = reduce(lambda left,right: pd.merge(left,right,on='PATNO'), sem
 motorMvtDataList = [motorMvtDataFiltered,labelDataFiltered]
 motorMvtDataSet = reduce(lambda left,right: pd.merge(left,right,on='PATNO'), motorMvtDataList)
 '''
+#Uncomment the block or run separately to get graphs figures and save them 
+print("----(Data VIsualization Plots)----")
+
 seaborn.pairplot(verbalDataSet, hue ='COMPLT')
+verbalDataSet_corr = verbalDataSet.corr()
+print("Correlation Matrix for VerbalDataSet Features : ")
+print(verbalDataSet_corr)
+sn.heatmap(verbalDataSet_corr,xticklabels=verbalDataSet_corr.columns.values,yticklabels=verbalDataSet_corr.columns.values)
+
 seaborn.pairplot(semanticDataSet, hue ='COMPLT')
+semanticDataSet_corr = semanticDataSet.corr()
+print("Correlation Matrix for SemanticDataSet Features : ")
+print(semanticDataSet_corr)
+sn.heatmap(semanticDataSet_corr,xticklabels=semanticDataSet_corr.columns.values,yticklabels=semanticDataSet_corr.columns.values)
+
 seaborn.pairplot(motorMvtDataSet, hue ='COMPLT')
+motorMvtDataSet_corr = verbalDataSet.corr()
+print("Correlation Matrix for MotorMvtDataSet Features : ")
+print(motorMvtDataSet_corr)
+sn.heatmap(motorMvtDataSet_corr,xticklabels=motorMvtDataSet_corr.columns.values,yticklabels=motorMvtDataSet_corr.columns.values)
+
 '''
 
 print("Total Labels for Each Class : ")
@@ -140,6 +163,7 @@ decision_tree_clf = decision_tree_clf.fit(X_train, y_train)
 tree.plot_tree(decision_tree_clf)
 dt_y_val_pred = decision_tree_clf.predict(X_val)
 print("Val Accuracy:",metrics.accuracy_score(y_val, dt_y_val_pred))
+print("Val MSE:",metrics.mean_squared_error(y_val, dt_y_val_pred))
 print("F1 Score:",metrics.f1_score(y_val, dt_y_val_pred))
 print("Confusion Matrix:")
 print(metrics.confusion_matrix(y_val, dt_y_val_pred))
@@ -147,6 +171,36 @@ print(metrics.confusion_matrix(y_val, dt_y_val_pred))
 dt_y_test_pred = decision_tree_clf.predict(X_val)
 #print("Test Accuracy:",metrics.accuracy_score(y_test, dt_y_test_pred))
 
+# In[]
+print("--------------(Gradient Boosting Decision Trees)-----------------")
+
+alphas = [1e-15, 1e-10, 1e-8, 1e-5, 1e-4, 1e-3, 1e-2, 0.025, 0.05, 0.1, 0.75, 0.5, 0.75, 1, 1.0001, 1.01, 1.025, 1.05, 1.075, 1.1, 1.125, 1.15, 1.175, 1.2, 2, 3, 4, 5]
+maxdepths = [3,5,7,10]
+
+xgb_boost_CV_list = []
+for alpha in alphas:
+    for max_depth in maxdepths:
+        xgboost_reg_model =  xgboost.XGBRegressor(reg_alpha=alpha, objective='binary:logistic', max_depth=max_depth,eval_metric="logloss")
+        score = cross_val_score(xgboost_reg_model, X_train, y_train, cv=10, scoring='neg_mean_squared_error')
+        xgboost_reg_model.fit(X_train, y_train)
+        xgbr_y_val_pred = xgboost_reg_model.predict(X_val)
+        predicted_choice = (xgbr_y_val_pred > 0.5).astype(int)
+        xgb_boost_CV_list.append({'alpha':alpha, 
+                                  'max_depth' : max_depth, 
+                                  'mse' : (score*-1).mean(), 
+                                  'f1' : metrics.f1_score(y_val, predicted_choice),
+                                  'cm' : metrics.confusion_matrix(y_val, predicted_choice),
+                                  'auc' : metrics.accuracy_score(y_val, predicted_choice)})
+
+xgb_boost_CV_list_sorted = sorted(xgb_boost_CV_list, key = lambda i: i['auc'],reverse=True)
+
+optimalModelParams = xgb_boost_CV_list_sorted[0]
+print("After Using L1 penalized Gradient Boosting Tree, Optimal Boosting with MSE",optimalModelParams['mse']," was found for alpha",optimalModelParams['alpha'],"with max depth",optimalModelParams['max_depth'])
+print("Val MSE:",optimalModelParams['mse'])
+print("Val Accuracy:",optimalModelParams['auc'])
+print("F1 Score:",optimalModelParams['f1'])
+print("Confusion Matrix:")
+print(optimalModelParams['cm'])
 # In[3]
 print("---------------(SVM)----------------")
 
