@@ -24,9 +24,9 @@ import seaborn
 import xgboost
 from xgboost import cv
 import seaborn as sn
-
+import imblearn
 import warnings
-
+from imblearn.over_sampling import SMOTE,SVMSMOTE,BorderlineSMOTE,KMeansSMOTE
 warnings.filterwarnings("ignore")
 
 print("----(Data Preprocessing...)----")
@@ -151,6 +151,14 @@ print(finalDataSet['COMPLT'].value_counts())
 
 X = finalFeaturesEarlyFusionDataSet.drop(['PATNO'], axis=1)
 y = finalLabelData.drop(['PATNO'], axis=1)
+
+
+oversample = SMOTE()
+X, y = oversample.fit_resample(X, y)
+
+print("Total Labels for Each Class after SMOTE subsampling: ")
+print(y.value_counts())
+
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.01, random_state=42)
 X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.20, random_state=42)
 
@@ -171,36 +179,6 @@ print(metrics.confusion_matrix(y_val, dt_y_val_pred))
 dt_y_test_pred = decision_tree_clf.predict(X_val)
 #print("Test Accuracy:",metrics.accuracy_score(y_test, dt_y_test_pred))
 
-# In[]
-print("--------------(Gradient Boosting Decision Trees)-----------------")
-
-alphas = [1e-15, 1e-10, 1e-8, 1e-5, 1e-4, 1e-3, 1e-2, 0.025, 0.05, 0.1, 0.75, 0.5, 0.75, 1, 1.0001, 1.01, 1.025, 1.05, 1.075, 1.1, 1.125, 1.15, 1.175, 1.2, 2, 3, 4, 5]
-maxdepths = [3,5,7,10]
-
-xgb_boost_CV_list = []
-for alpha in alphas:
-    for max_depth in maxdepths:
-        xgboost_reg_model =  xgboost.XGBRegressor(reg_alpha=alpha, objective='binary:logistic', max_depth=max_depth,eval_metric="logloss")
-        score = cross_val_score(xgboost_reg_model, X_train, y_train, cv=10, scoring='neg_mean_squared_error')
-        xgboost_reg_model.fit(X_train, y_train)
-        xgbr_y_val_pred = xgboost_reg_model.predict(X_val)
-        predicted_choice = (xgbr_y_val_pred > 0.5).astype(int)
-        xgb_boost_CV_list.append({'alpha':alpha, 
-                                  'max_depth' : max_depth, 
-                                  'mse' : (score*-1).mean(), 
-                                  'f1' : metrics.f1_score(y_val, predicted_choice),
-                                  'cm' : metrics.confusion_matrix(y_val, predicted_choice),
-                                  'auc' : metrics.accuracy_score(y_val, predicted_choice)})
-
-xgb_boost_CV_list_sorted = sorted(xgb_boost_CV_list, key = lambda i: i['auc'],reverse=True)
-
-optimalModelParams = xgb_boost_CV_list_sorted[0]
-print("After Using L1 penalized Gradient Boosting Tree, Optimal Boosting with MSE",optimalModelParams['mse']," was found for alpha",optimalModelParams['alpha'],"with max depth",optimalModelParams['max_depth'])
-print("Val MSE:",optimalModelParams['mse'])
-print("Val Accuracy:",optimalModelParams['auc'])
-print("F1 Score:",optimalModelParams['f1'])
-print("Confusion Matrix:")
-print(optimalModelParams['cm'])
 # In[3]
 print("---------------(SVM)----------------")
 
@@ -280,12 +258,12 @@ class ThreeLayerMLP(torch.nn.Module):
 
     def forward(self, x):
         x= x.cuda()
-        h1_relu = self.linear1(x).clamp(min=0)
+        h1_relu = self.linear1(x)
         #h1_relu = self.dropout(h1_relu)
-        h2_relu = self.linear2(h1_relu).clamp(min=0)
+        h2_relu = self.linear2(h1_relu)
         #h2_relu = self.dropout(h2_relu)
         # y_pred = 1/(1 + np.exp(-self.linear3(h2_relu)))
-        h3_relu = self.linear3(h2_relu).clamp(min=0)
+        h3_relu = self.linear3(h2_relu)
         #h3_relu = self.dropout(h3_relu)
         y_pred = self.linear4(h3_relu)
         y_pred = self.softmax(y_pred)
@@ -307,7 +285,7 @@ optimizer = torch.optim.Adam(binary_nn_model.parameters(), lr=0.001)
 epochErrors = []
 epochF1Score = []
 epochList = []
-for t in range(185): 
+for t in range(5000): 
         train_loss = 0.0
         binary_nn_model.train()
         binary_nn_model.float()
